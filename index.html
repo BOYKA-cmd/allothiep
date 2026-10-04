@@ -513,6 +513,26 @@
                 object-fit: cover;
             }
 
+            .map-actions {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.5rem;
+                margin: 0.75rem 0 1rem;
+            }
+
+            .map-actions .btn {
+                padding: 0.5rem 1rem;
+                font-size: 0.9rem;
+            }
+
+            .loc-status {
+                margin: 0.4rem 0 0;
+                color: var(--muted);
+                font-size: 0.85rem;
+            }
+
+            .loc-status a { font-weight: 600; }
+
             .cart-name {
                 display: flex;
                 align-items: center;
@@ -1334,7 +1354,18 @@
                 </div>
                 <div class="field" id="addressField" hidden>
                     <label for="oAddress">Adresse de livraison</label>
-                    <input id="oAddress" type="text" autocomplete="street-address">
+                    <input id="oAddress" type="text" autocomplete="street-address" placeholder="Quartier, rue, point de repère…">
+
+                    <div class="map-actions">
+                        <button class="btn" id="locateBtn" type="button">📍 Utiliser ma position</button>
+                        <a class="btn" href="https://www.google.com/maps/@14.7167,-17.4677,13z" target="_blank" rel="noopener">🗺️ Choisir sur Google Maps</a>
+                    </div>
+
+                    <label for="oLink">Position sur la carte</label>
+                    <input id="oLink" type="url" inputmode="url" placeholder="Lien Google Maps de votre domicile">
+                    <p class="loc-status" id="locStatus" role="status">
+                        Sur Google Maps, appuyez longuement sur votre domicile, touchez « Partager », copiez le lien et collez-le ici.
+                    </p>
                 </div>
 
                 <p class="error" id="orderError" role="alert"></p>
@@ -1766,12 +1797,40 @@
                 });
             });
 
+            const MAPS_LINK = /^https?:\/\/(www\.)?(google\.[a-z.]+\/maps|maps\.google\.[a-z.]+|maps\.app\.goo\.gl|goo\.gl\/maps)/i;
+
+            $("#locateBtn").addEventListener("click", () => {
+                const status = $("#locStatus");
+
+                if (!navigator.geolocation) {
+                    status.textContent = "La localisation n’est pas disponible ici. Choisissez votre domicile sur Google Maps.";
+                    return;
+                }
+
+                status.textContent = "Recherche de votre position…";
+
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const { latitude, longitude, accuracy } = position.coords;
+                        const url = `https://www.google.com/maps?q=${latitude.toFixed(5)},${longitude.toFixed(5)}`;
+
+                        $("#oLink").value = url;
+                        status.innerHTML = `Position enregistrée (précision ±${Math.round(accuracy)} m) · <a href="${url}" target="_blank" rel="noopener">Vérifier sur la carte</a>`;
+                    },
+                    () => {
+                        status.textContent = "Position refusée ou indisponible. Choisissez votre domicile sur Google Maps, puis collez le lien.";
+                    },
+                    { enableHighAccuracy: true, timeout: 10000 }
+                );
+            });
+
             $("#orderForm").addEventListener("submit", (event) => {
                 event.preventDefault();
 
                 const name = $("#oName").value.trim();
                 const phone = $("#oPhone").value.trim();
                 const address = $("#oAddress").value.trim();
+                const mapLink = $("#oLink").value.trim();
                 const mode = document.querySelector("input[name='mode']:checked").value;
                 const error = $("#orderError");
 
@@ -1785,9 +1844,16 @@
                     return;
                 }
 
-                if (mode === "Livraison" && address.length < 4) {
-                    error.textContent = "Indiquez l’adresse de livraison.";
-                    return;
+                if (mode === "Livraison") {
+                    if (mapLink && !MAPS_LINK.test(mapLink)) {
+                        error.textContent = "Collez un lien Google Maps valide ou utilisez « Utiliser ma position ».";
+                        return;
+                    }
+
+                    if (address.length < 4 && !mapLink) {
+                        error.textContent = "Indiquez votre adresse ou choisissez votre domicile sur la carte.";
+                        return;
+                    }
                 }
 
                 error.textContent = "";
@@ -1801,7 +1867,8 @@
                     "Bonjour Allo Thièp, je souhaite commander :",
                     ...lines,
                     `Mode : ${mode}`,
-                    mode === "Livraison" ? `Adresse : ${address}` : null,
+                    mode === "Livraison" && address ? `Adresse : ${address}` : null,
+                    mode === "Livraison" && mapLink ? `Position sur la carte : ${mapLink}` : null,
                     `Nom : ${name}`,
                     `Téléphone : ${phone}`
                 ].filter(Boolean).join("\n");
